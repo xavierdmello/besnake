@@ -1,9 +1,24 @@
 import { network } from "hardhat";
+import { config } from "../config.js";
 
 const { viem, networkName } = await network.connect();
 const client = await viem.getPublicClient();
 
-const snake = await viem.deployContract("Snake");
+const chainId = Number(await client.getChainId());
+const chainConfig = config[chainId as keyof typeof config];
+
+if (!chainConfig) {
+  throw new Error(`No config found for chain ID ${chainId}`);
+}
+
+// USDC has 6 decimals, so 0.01 USDC = 0.01 * 10^6 = 10000
+const wagerAmountWei = BigInt(Math.floor(parseFloat(chainConfig.wagerAmount) * 1e6));
+
+const snake = await viem.deployContract("Snake", [
+  chainConfig.entropyV2Address as `0x${string}`,
+  wagerAmountWei,
+  chainConfig.usdcAddress as `0x${string}`,
+]);
 
 console.log("Snake address:", snake.address);
 

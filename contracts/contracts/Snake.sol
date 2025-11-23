@@ -1,14 +1,23 @@
+// SPDX-License-Identifier: UNLICENSED
+pragma solidity ^0.8.28;
+
 import { IEntropyConsumer } from "@pythnetwork/entropy-sdk-solidity/IEntropyConsumer.sol";
 import { IEntropyV2 } from "@pythnetwork/entropy-sdk-solidity/IEntropyV2.sol";
  
 // @param entropyAddress The address of the entropy contract.
+// @param wagerAmount The wager amount in wei.
+// @param usdcAddress The address of the USDC token contract.
 contract Snake is IEntropyConsumer {
   IEntropyV2 public entropy;
   bytes32 public number;
   uint256 public numberAsUint;
+  uint256 public wagerAmount;
+  address public usdcAddress;
  
-  constructor() {
-    entropy = IEntropyV2(0x41c9e39574F40Ad34c79f1C99B66A45eFB830d4c);
+  constructor(address entropyAddress, uint256 _wagerAmount, address _usdcAddress) {
+    entropy = IEntropyV2(entropyAddress);
+    wagerAmount = _wagerAmount;
+    usdcAddress = _usdcAddress;
   }
 
   function requestRandomNumber() external payable {

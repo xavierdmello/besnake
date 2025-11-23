@@ -6,24 +6,23 @@ import {Test} from "forge-std/Test.sol";
 
 contract SnakeTest is Test {
   Snake snake;
+  address constant ENTROPY_V2_ADDRESS = 0x41c9e39574F40Ad34c79f1C99B66A45eFB830d4c;
+  address constant USDC_ADDRESS = 0x036CbD53842c5426634e7929541eC2318f3dCF7e;
+  uint256 constant WAGER_AMOUNT = 10000; // 1 cent in USDC (6 decimals: 0.01 * 10^6 = 10000)
 
   function setUp() public {
-    snake = new Snake();
+    snake = new Snake(ENTROPY_V2_ADDRESS, WAGER_AMOUNT, USDC_ADDRESS);
   }
 
-  function test_InitialValue() public view {
-    require(snake.x() == 0, "Initial value should be 0");
+  function test_EntropyAddress() public view {
+    require(address(snake.entropy()) == ENTROPY_V2_ADDRESS, "Entropy address should match");
   }
 
-  function testFuzz_Inc(uint8 x) public {
-    for (uint8 i = 0; i < x; i++) {
-      snake.inc();
-    }
-    require(snake.x() == x, "Value after calling inc x times should be x");
+  function test_UsdcAddress() public view {
+    require(snake.usdcAddress() == USDC_ADDRESS, "USDC address should match");
   }
 
-  function test_IncByZero() public {
-    vm.expectRevert();
-    snake.incBy(0);
+  function test_WagerAmount() public view {
+    require(snake.wagerAmount() == WAGER_AMOUNT, "Wager amount should match");
   }
 }
