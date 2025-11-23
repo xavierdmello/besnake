@@ -52,6 +52,19 @@ const hashMoves = (moves: MoveLog[]): string => {
   return Math.abs(hash).toString(16).padStart(8, '0')
 }
 
+// Simple seeded random number generator (returns value between 0 and 1)
+// Uses only the seed and index - deterministic across all computers
+const seededRandom = (seed: bigint, index: number): number => {
+  // Combine seed and index as strings for consistent hashing
+  const seedStr = seed.toString()
+  const combined = (seedStr + '_' + index.toString()).split('').reduce((acc, char) => {
+    const hash = ((acc << 5) - acc) + char.charCodeAt(0)
+    return hash & hash // Convert to 32bit integer
+  }, 0)
+  // Use absolute value and normalize to 0-1
+  return Math.abs(combined) % 1000000 / 1000000
+}
+
 type GooglyEyesProps = {
   direction: Position
   player: 1 | 2
@@ -316,6 +329,7 @@ type GameState = {
   direction1: Position
   direction2: Position
   food: Position
+  foodCounter: number // Tracks how many times food has been eaten (for deterministic generation)
   gameOver: boolean
   winner: 1 | 2 | null
 }
@@ -396,6 +410,7 @@ function App() {
   const [direction1, setDirection1] = useState<Position>(INITIAL_DIRECTION_1)
   const [direction2, setDirection2] = useState<Position>(INITIAL_DIRECTION_2)
   const [food, setFood] = useState<Position>({ x: 10, y: 10 })
+  const [foodCounter, setFoodCounter] = useState(0)
   const [gameOver, setGameOver] = useState(false)
   const [winner, setWinner] = useState<1 | 2 | null>(null)
   // Scores are derived from snake lengths - no separate state needed
@@ -417,6 +432,7 @@ function App() {
   const foodRef = useRef(food)
   const gameOverRef = useRef(gameOver)
   const tickRef = useRef(tick)
+  const randomSeedRef = useRef<bigint | undefined>(randomSeed as bigint | undefined)
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const boomAudioRef = useRef<HTMLAudioElement | null>(null)
   const munchAudioRef = useRef<HTMLAudioElement | null>(null)
@@ -429,7 +445,8 @@ function App() {
     foodRef.current = food
     gameOverRef.current = gameOver
     tickRef.current = tick
-  }, [snake1, snake2, direction1, direction2, food, gameOver, tick])
+    randomSeedRef.current = randomSeed as bigint | undefined
+  }, [snake1, snake2, direction1, direction2, food, gameOver, tick, randomSeed])
 
   // Initialize audio
   useEffect(() => {
@@ -476,16 +493,26 @@ function App() {
     }
   }, [showGameOverScreen])
 
-  const generateFood = useCallback((): Position => {
+  const generateFood = useCallback((seed?: bigint, index: number = 0): Position => {
     let newFood: Position
+    let attempts = 0
     do {
+      // Use seeded random if available, otherwise fall back to Math.random
+      const rand = seed !== undefined 
+        ? seededRandom(seed, index * 2 + attempts)
+        : Math.random()
+      const rand2 = seed !== undefined
+        ? seededRandom(seed, index * 2 + attempts + 1)
+        : Math.random()
       newFood = {
-        x: Math.floor(Math.random() * GRID_SIZE),
-        y: Math.floor(Math.random() * GRID_SIZE)
+        x: Math.floor(rand * GRID_SIZE),
+        y: Math.floor(rand2 * GRID_SIZE)
       }
+      attempts++
     } while (
-      snake1Ref.current.some(seg => seg.x === newFood.x && seg.y === newFood.y) ||
-      snake2Ref.current.some(seg => seg.x === newFood.x && seg.y === newFood.y)
+      (snake1Ref.current.some(seg => seg.x === newFood.x && seg.y === newFood.y) ||
+       snake2Ref.current.some(seg => seg.x === newFood.x && seg.y === newFood.y)) &&
+      attempts < 100 // Safety limit to prevent infinite loops
     )
     return newFood
   }, [])
@@ -511,7 +538,8 @@ function App() {
     state: GameState,
     p1Move: string | null,
     p2Move: string | null,
-    currentTick: number
+    currentTick: number,
+    randomSeed?: bigint
   ): GameState => {
     const dir1 = letterToDirection(p1Move)
     const dir2 = letterToDirection(p2Move)
@@ -596,6 +624,7 @@ function App() {
     let p1AteFood = false
     let p2AteFood = false
     let newFood = state.food
+    let newFoodCounter = state.foodCounter
 
     // Check food for player 1 (only if moving)
     if (dir1.x !== 0 || dir1.y !== 0) {
@@ -613,16 +642,32 @@ function App() {
 
     // Generate new food if eaten by either player
     if (p1AteFood || p2AteFood) {
-      // Generate food that doesn't overlap with snakes
+      // Use food counter for deterministic generation
+      newFoodCounter = state.foodCounter + 1
+      let attempts = 0
       let newFoodPos: Position
+      
+      // Generate food deterministically - if position is invalid, try next counter value
       do {
-        newFoodPos = {
-          x: Math.floor(Math.random() * GRID_SIZE),
-          y: Math.floor(Math.random() * GRID_SIZE)
+        if (randomSeed !== undefined) {
+          const rand = seededRandom(randomSeed, newFoodCounter * 2 + attempts)
+          const rand2 = seededRandom(randomSeed, newFoodCounter * 2 + attempts + 1)
+          newFoodPos = {
+            x: Math.floor(rand * GRID_SIZE),
+            y: Math.floor(rand2 * GRID_SIZE)
+          }
+        } else {
+          // Fallback to random if no seed
+          newFoodPos = {
+            x: Math.floor(Math.random() * GRID_SIZE),
+            y: Math.floor(Math.random() * GRID_SIZE)
+          }
         }
+        attempts++
       } while (
-        newSnake1.some(seg => seg.x === newFoodPos.x && seg.y === newFoodPos.y) ||
-        newSnake2.some(seg => seg.x === newFoodPos.x && seg.y === newFoodPos.y)
+        (newSnake1.some(seg => seg.x === newFoodPos.x && seg.y === newFoodPos.y) ||
+         newSnake2.some(seg => seg.x === newFoodPos.x && seg.y === newFoodPos.y)) &&
+        attempts < 1000 // Safety limit
       )
       newFood = newFoodPos
     }
@@ -647,6 +692,7 @@ function App() {
         direction1: dir1,
         direction2: dir2,
         food: newFood,
+        foodCounter: newFoodCounter,
         gameOver: true,
         winner: 1
       }
@@ -658,6 +704,7 @@ function App() {
         direction1: dir1,
         direction2: dir2,
         food: newFood,
+        foodCounter: newFoodCounter,
         gameOver: true,
         winner: 1
       }
@@ -669,6 +716,7 @@ function App() {
         direction1: dir1,
         direction2: dir2,
         food: newFood,
+        foodCounter: newFoodCounter,
         gameOver: true,
         winner: 2
       }
@@ -680,6 +728,7 @@ function App() {
       direction1: dir1,
       direction2: dir2,
       food: newFood,
+      foodCounter: newFoodCounter,
       gameOver: state.gameOver,
       winner: state.winner
     }
@@ -710,10 +759,11 @@ function App() {
       direction1: dir1,
       direction2: dir2,
       food: { ...foodRef.current },
+      foodCounter: foodCounter,
       gameOver: false,
       winner: null
     }
-    const newState = applyMove(currentState, p1Move, p2Move, currentTick)
+    const newState = applyMove(currentState, p1Move, p2Move, currentTick, randomSeedRef.current)
     
     // Check if food was eaten (snake length increased or food position changed)
     const p1LengthIncreased = newState.snake1.length > currentState.snake1.length
@@ -745,6 +795,7 @@ function App() {
       setDirection1(newState.direction1)
       setDirection2(newState.direction2)
       setFood(newState.food)
+      setFoodCounter(newState.foodCounter)
       if (newState.gameOver) {
         setGameOver(true)
         setWinner(newState.winner)
@@ -774,7 +825,7 @@ function App() {
       return newLog
     })
     setTick(prev => prev + 1)
-  }, [applyMove])
+  }, [applyMove, foodCounter])
 
   useEffect(() => {
     if (gameOver || !gameStarted) return
@@ -864,6 +915,7 @@ function App() {
     setDirection1(INITIAL_DIRECTION_1)
     setDirection2(INITIAL_DIRECTION_2)
     setFood({ x: 10, y: 10 })
+    setFoodCounter(0)
     setGameOver(false)
     setWinner(null)
     setTick(0)
