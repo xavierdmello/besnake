@@ -36,6 +36,11 @@ await verifyContract(
   {
     address: snake.address,
     provider: "blockscout", // or "blockscout", or "sourcify"
+    constructorArgs: [
+      chainConfig.entropyV2Address as `0x${string}`,
+      wagerAmountWei,
+      chainConfig.usdcAddress as `0x${string}`,
+    ],
   },
   hre,
 );

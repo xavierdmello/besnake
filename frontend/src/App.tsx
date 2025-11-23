@@ -1,9 +1,10 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import './App.css'
-import { useReadContract, useWriteContract, useChainId, useWaitForTransactionReceipt, useBlockNumber } from 'wagmi'
+import { useReadContract, useWriteContract, useChainId, useWaitForTransactionReceipt, useBlockNumber, useAccount } from 'wagmi'
 import { config as contractConfig } from '../config'
 import { abi } from '../abi'
 import { abi as entropyAbi } from '../entropyabi'
+import { usdcAbi } from '../usdcabi'
 import { ConnectButton } from '@rainbow-me/rainbowkit'
 
 const GRID_SIZE = 20
@@ -388,27 +389,105 @@ function App() {
 
   // Watch for new blocks
   const { data: blockNumber } = useBlockNumber({ watch: true })
+  const { address: walletAddress } = useAccount()
 
-  // Write contract to generate new random number
+  // Get USDC address and wager amount from config
+  const usdcAddress = contractConfig[chainId as keyof typeof contractConfig]?.usdcAddress as `0x${string}` | undefined
+  const wagerAmountStr = contractConfig[chainId as keyof typeof contractConfig]?.wagerAmount || "0.01"
+  const wagerAmountWei = BigInt(Math.floor(parseFloat(wagerAmountStr) * 1e6)) // USDC has 6 decimals
+
+  // Read wager amount from contract
+  const { data: contractWagerAmount, refetch: refetchWagerAmount } = useReadContract({
+    address: contractAddress,
+    abi: abi,
+    functionName: 'wagerAmount',
+    query: {
+      enabled: !!contractAddress,
+    },
+  })
+
+  // Read player ready states
+  const { data: player1Ready, refetch: refetchPlayer1Ready } = useReadContract({
+    address: contractAddress,
+    abi: abi,
+    functionName: 'player1Ready',
+    query: {
+      enabled: !!contractAddress,
+    },
+  })
+
+  const { data: player2Ready, refetch: refetchPlayer2Ready } = useReadContract({
+    address: contractAddress,
+    abi: abi,
+    functionName: 'player2Ready',
+    query: {
+      enabled: !!contractAddress,
+    },
+  })
+
+  // Read USDC allowance
+  const { data: allowance, refetch: refetchAllowance } = useReadContract({
+    address: usdcAddress,
+    abi: usdcAbi as any,
+    functionName: 'allowance',
+    args: walletAddress && contractAddress ? [walletAddress, contractAddress] : undefined,
+    query: {
+      enabled: !!walletAddress && !!contractAddress && !!usdcAddress,
+    },
+  })
+
+  // Refetch on every block
+  useEffect(() => {
+    if (blockNumber && contractAddress) {
+      refetchRandomSeed()
+      refetchWagerAmount()
+      refetchPlayer1Ready()
+      refetchPlayer2Ready()
+      if (walletAddress) {
+        refetchAllowance()
+      }
+    }
+  }, [blockNumber, contractAddress, walletAddress, refetchRandomSeed, refetchWagerAmount, refetchPlayer1Ready, refetchPlayer2Ready, refetchAllowance])
+
+  // Write contract hooks
   const { writeContract, data: hash, isPending } = useWriteContract()
+  const { writeContract: writeContractApprove, data: approveHash, isPending: isApproving } = useWriteContract()
+  const { writeContract: writeContractWager, data: wagerHash, isPending: isWagering } = useWriteContract()
   
   const { isLoading: isConfirming, isSuccess: isConfirmed } = useWaitForTransactionReceipt({
     hash,
   })
 
-  // Refetch random seed on every new block
-  useEffect(() => {
-    if (blockNumber && contractAddress) {
-      refetchRandomSeed()
-    }
-  }, [blockNumber, contractAddress, refetchRandomSeed])
+  const { isLoading: isApprovingConfirming, isSuccess: isApproved } = useWaitForTransactionReceipt({
+    hash: approveHash,
+  })
 
-  // Refetch random seed after transaction is confirmed
+  const { isLoading: isWagerConfirming, isSuccess: isWagered } = useWaitForTransactionReceipt({
+    hash: wagerHash,
+  })
+
+  // Refetch after transactions are confirmed
   useEffect(() => {
     if (isConfirmed) {
       refetchRandomSeed()
     }
   }, [isConfirmed, refetchRandomSeed])
+
+  useEffect(() => {
+    if (isApproved) {
+      refetchAllowance()
+    }
+  }, [isApproved, refetchAllowance])
+
+  useEffect(() => {
+    if (isWagered) {
+      refetchPlayer1Ready()
+      refetchPlayer2Ready()
+    }
+  }, [isWagered, refetchPlayer1Ready, refetchPlayer2Ready])
+
+  // Check if both players are ready
+  const bothPlayersReady = player1Ready === true && player2Ready === true
 
   const [snake1, setSnake1] = useState<Position[]>(INITIAL_SNAKE_1)
   const [snake2, setSnake2] = useState<Position[]>(INITIAL_SNAKE_2)
@@ -1134,6 +1213,186 @@ function App() {
         ? (moveLog.find(([t]) => t === editingMove.tick)?.[1] ?? null)
         : (moveLog.find(([t]) => t === editingMove.tick)?.[2] ?? null))
     : null
+
+  // Wager screen handlers
+  const handleApprove = () => {
+    if (!usdcAddress || !contractAddress) return
+    // Approve a large amount (max uint256) to avoid repeated approvals
+    const maxApproval = BigInt('0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff')
+    // @ts-expect-error - wagmi types are strict but this works at runtime
+    writeContractApprove({
+      address: usdcAddress,
+      abi: usdcAbi as any,
+      functionName: 'approve',
+      args: [contractAddress, maxApproval] as const,
+    })
+  }
+
+  const handleWagerPlayer1 = () => {
+    if (!contractAddress || !feeV2) return
+    // @ts-expect-error - wagmi types are strict but this works at runtime
+    writeContractWager({
+      address: contractAddress,
+      abi: abi as any,
+      functionName: 'wagerPlayer1',
+      args: [],
+      value: feeV2,
+    })
+  }
+
+  const handleWagerPlayer2 = () => {
+    if (!contractAddress || !feeV2) return
+    // @ts-expect-error - wagmi types are strict but this works at runtime
+    writeContractWager({
+      address: contractAddress,
+      abi: abi as any,
+      functionName: 'wagerPlayer2',
+      args: [],
+      value: feeV2,
+    })
+  }
+
+  // Check if allowance is sufficient
+  const allowanceAmount = allowance ? BigInt(allowance.toString()) : 0n
+  const wagerAmountNeeded = contractWagerAmount ? BigInt(contractWagerAmount.toString()) : wagerAmountWei
+  const hasEnoughAllowance = allowanceAmount >= wagerAmountNeeded
+
+  // Format wager amount for display
+  const wagerDisplay = contractWagerAmount 
+    ? (Number(contractWagerAmount) / 1e6).toFixed(2)
+    : wagerAmountStr
+
+  // Show wager screen if both players are not ready
+  if (!bothPlayersReady && contractAddress) {
+    return (
+      <div className="game-container">
+        <header className="app-header">
+          <div className="app-header-logo">
+            SnakeWithMoney
+          </div>
+          <div style={{ 
+            display: 'flex', 
+            alignItems: 'center', 
+            justifyContent: 'center',
+            flex: 1,
+            gap: '8px'
+          }}>
+          </div>
+          <div>
+            <ConnectButton />
+          </div>
+        </header>
+        <div style={{
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          minHeight: '80vh',
+          gap: '20px',
+          padding: '40px'
+        }}>
+          <h1 style={{ fontSize: '48px', marginBottom: '20px', color: '#fff' }}>Place Your Wager</h1>
+          
+          <div style={{
+            backgroundColor: 'rgba(0, 0, 0, 0.7)',
+            padding: '30px',
+            borderRadius: '12px',
+            border: '2px solid #4CAF50',
+            minWidth: '400px',
+            textAlign: 'center'
+          }}>
+            <div style={{ marginBottom: '20px', color: '#fff' }}>
+              <p style={{ fontSize: '18px', marginBottom: '10px' }}>Wager Amount:</p>
+              <p style={{ fontSize: '32px', fontWeight: 'bold', color: '#4CAF50' }}>${wagerDisplay} USDC</p>
+            </div>
+
+            {!walletAddress ? (
+              <div style={{ color: '#888', marginTop: '20px' }}>
+                <p>Please connect your wallet to continue</p>
+              </div>
+            ) : !hasEnoughAllowance ? (
+              <div>
+                <p style={{ color: '#ff9800', marginBottom: '20px' }}>
+                  Insufficient USDC allowance. Please approve first.
+                </p>
+                <button
+                  onClick={handleApprove}
+                  disabled={isApproving || isApprovingConfirming}
+                  style={{
+                    padding: '15px 30px',
+                    fontSize: '18px',
+                    fontWeight: 'bold',
+                    backgroundColor: isApproving || isApprovingConfirming ? '#666' : '#4CAF50',
+                    color: '#fff',
+                    border: 'none',
+                    borderRadius: '8px',
+                    cursor: isApproving || isApprovingConfirming ? 'not-allowed' : 'pointer',
+                    minWidth: '200px'
+                  }}
+                >
+                  {isApproving || isApprovingConfirming ? 'Approving...' : 'Approve USDC'}
+                </button>
+                {isApproved && (
+                  <p style={{ color: '#4CAF50', marginTop: '10px' }}>Approval confirmed!</p>
+                )}
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
+                <button
+                  onClick={handleWagerPlayer1}
+                  disabled={player1Ready === true || isWagering || isWagerConfirming}
+                  style={{
+                    padding: '15px 30px',
+                    fontSize: '18px',
+                    fontWeight: 'bold',
+                    backgroundColor: player1Ready === true || isWagering || isWagerConfirming ? '#666' : '#2196F3',
+                    color: '#fff',
+                    border: 'none',
+                    borderRadius: '8px',
+                    cursor: player1Ready === true || isWagering || isWagerConfirming ? 'not-allowed' : 'pointer'
+                  }}
+                >
+                  {player1Ready === true 
+                    ? 'Player 1 Ready ✓' 
+                    : isWagering || isWagerConfirming 
+                    ? 'Wagering...' 
+                    : 'Wager as Player 1'}
+                </button>
+                <button
+                  onClick={handleWagerPlayer2}
+                  disabled={player2Ready === true || isWagering || isWagerConfirming}
+                  style={{
+                    padding: '15px 30px',
+                    fontSize: '18px',
+                    fontWeight: 'bold',
+                    backgroundColor: player2Ready === true || isWagering || isWagerConfirming ? '#666' : '#FF9800',
+                    color: '#fff',
+                    border: 'none',
+                    borderRadius: '8px',
+                    cursor: player2Ready === true || isWagering || isWagerConfirming ? 'not-allowed' : 'pointer'
+                  }}
+                >
+                  {player2Ready === true 
+                    ? 'Player 2 Ready ✓' 
+                    : isWagering || isWagerConfirming 
+                    ? 'Wagering...' 
+                    : 'Wager as Player 2'}
+                </button>
+                {isWagered && (
+                  <p style={{ color: '#4CAF50', marginTop: '10px' }}>Wager confirmed!</p>
+                )}
+              </div>
+            )}
+
+            <div style={{ marginTop: '30px', color: '#888', fontSize: '14px' }}>
+              <p>Player 1 Status: {player1Ready === true ? '✓ Ready' : '⏳ Waiting'}</p>
+              <p>Player 2 Status: {player2Ready === true ? '✓ Ready' : '⏳ Waiting'}</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="game-container">
