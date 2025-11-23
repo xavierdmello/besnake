@@ -339,6 +339,9 @@ function App() {
   const foodRef = useRef(food)
   const gameOverRef = useRef(gameOver)
   const tickRef = useRef(tick)
+  const audioRef = useRef<HTMLAudioElement | null>(null)
+  const boomAudioRef = useRef<HTMLAudioElement | null>(null)
+  const munchAudioRef = useRef<HTMLAudioElement | null>(null)
 
   useEffect(() => {
     snake1Ref.current = snake1
@@ -349,6 +352,51 @@ function App() {
     gameOverRef.current = gameOver
     tickRef.current = tick
   }, [snake1, snake2, direction1, direction2, food, gameOver, tick])
+
+  // Initialize audio
+  useEffect(() => {
+    audioRef.current = new Audio('/soundtrack.mp3')
+    audioRef.current.loop = true
+    audioRef.current.volume = 0.5
+    
+    boomAudioRef.current = new Audio('/boom.mp3')
+    boomAudioRef.current.volume = 0.7
+    
+    munchAudioRef.current = new Audio('/munch.mp3')
+    munchAudioRef.current.volume = 0.6
+    
+    return () => {
+      if (audioRef.current) {
+        audioRef.current.pause()
+        audioRef.current = null
+      }
+      if (boomAudioRef.current) {
+        boomAudioRef.current.pause()
+        boomAudioRef.current = null
+      }
+      if (munchAudioRef.current) {
+        munchAudioRef.current.pause()
+        munchAudioRef.current = null
+      }
+    }
+  }, [])
+
+  // Play soundtrack when game starts
+  useEffect(() => {
+    if (gameStarted && !gameOver && audioRef.current) {
+      audioRef.current.play().catch(err => {
+        console.error('Error playing soundtrack:', err)
+      })
+    }
+  }, [gameStarted, gameOver])
+
+  // Stop soundtrack when end screen is shown
+  useEffect(() => {
+    if (showGameOverScreen && audioRef.current) {
+      audioRef.current.pause()
+      audioRef.current.currentTime = 0
+    }
+  }, [showGameOverScreen])
 
   const generateFood = useCallback((): Position => {
     let newFood: Position
@@ -540,6 +588,32 @@ function App() {
     const p1Move = directionToLetter(dir1)
     const p2Move = directionToLetter(dir2)
     
+    // Apply the move immediately for live gameplay
+    // Create new arrays to avoid reference sharing
+    const currentState: GameState = {
+      snake1: [...snake1Ref.current],
+      snake2: [...snake2Ref.current],
+      direction1: dir1,
+      direction2: dir2,
+      food: { ...foodRef.current },
+      gameOver: false,
+      winner: null
+    }
+    const newState = applyMove(currentState, p1Move, p2Move, currentTick)
+    
+    // Check if food was eaten (snake length increased or food position changed)
+    const p1LengthIncreased = newState.snake1.length > currentState.snake1.length
+    const p2LengthIncreased = newState.snake2.length > currentState.snake2.length
+    const foodWasEaten = p1LengthIncreased || p2LengthIncreased || 
+                        (newState.food.x !== currentState.food.x || newState.food.y !== currentState.food.y)
+    
+    if (foodWasEaten && munchAudioRef.current) {
+      munchAudioRef.current.currentTime = 0
+      munchAudioRef.current.play().catch(err => {
+        console.error('Error playing munch sound:', err)
+      })
+    }
+    
     setMoveLog(prev => {
       const newLog = [...prev, [currentTick, p1Move, p2Move]]
       // Also update original move log if this is a new move (not a replay)
@@ -550,18 +624,6 @@ function App() {
         }
         return prevOriginal
       })
-      // Apply the move immediately for live gameplay
-      // Create new arrays to avoid reference sharing
-      const currentState: GameState = {
-        snake1: [...snake1Ref.current],
-        snake2: [...snake2Ref.current],
-        direction1: dir1,
-        direction2: dir2,
-        food: { ...foodRef.current },
-        gameOver: false,
-        winner: null
-      }
-      const newState = applyMove(currentState, p1Move, p2Move, currentTick)
       
       // Update state - scores are derived from snake lengths
       setSnake1(newState.snake1)
@@ -572,6 +634,13 @@ function App() {
       if (newState.gameOver) {
         setGameOver(true)
         setWinner(newState.winner)
+        // Play boom sound when player dies
+        if (boomAudioRef.current) {
+          boomAudioRef.current.currentTime = 0
+          boomAudioRef.current.play().catch(err => {
+            console.error('Error playing boom sound:', err)
+          })
+        }
         // Trigger explosion animation for losing snake(s)
         if (newState.winner === 1) {
           setExplodingSnake2(true) // Player 2 loses
@@ -692,6 +761,11 @@ function App() {
     setExplodingSnake1(false)
     setExplodingSnake2(false)
     setShowGameOverScreen(false)
+    // Stop soundtrack
+    if (audioRef.current) {
+      audioRef.current.pause()
+      audioRef.current.currentTime = 0
+    }
   }
 
   const handleMoveClick = useCallback((tick: number, player: 1 | 2) => {
@@ -776,7 +850,7 @@ function App() {
 
         {/* Center: Game Board */}
         <div className="game-center">
-          <div className={`game-board-wrapper ${gameOver ? 'game-over-blur' : ''}`}>
+          <div className={`game-board-wrapper ${showGameOverScreen ? 'game-over-blur' : ''}`}>
             <div className="game-board">
               {Array.from({ length: GRID_SIZE * GRID_SIZE }).map((_, index) => {
                 const x = index % GRID_SIZE
