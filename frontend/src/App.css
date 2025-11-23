@@ -694,3 +694,169 @@
 .instructions p {
   margin: 5px 0;
 }
+
+/* Payout Modal */
+.payout-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.9);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  backdrop-filter: blur(5px);
+}
+
+.payout-modal {
+  background-color: #1a1a1a;
+  border: 2px solid #4CAF50;
+  border-radius: 12px;
+  padding: 40px;
+  max-width: 600px;
+  width: 90%;
+  max-height: 90vh;
+  overflow-y: auto;
+  color: #fff;
+}
+
+.payout-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.payout-step {
+  padding: 20px;
+  background-color: #2a2a2a;
+  border-radius: 8px;
+  border: 1px solid #444;
+  text-align: center;
+  animation: fadeIn 0.5s ease-in;
+}
+
+.payout-step.success {
+  border-color: #4CAF50;
+  background-color: rgba(76, 175, 80, 0.1);
+}
+
+.payout-step.warning {
+  border-color: #ff9800;
+  background-color: rgba(255, 152, 0, 0.1);
+}
+
+.payout-step.error {
+  border-color: #f44336;
+  background-color: rgba(244, 67, 54, 0.1);
+}
+
+.payout-step h3 {
+  margin: 10px 0;
+  color: #fff;
+}
+
+.payout-step p {
+  margin: 10px 0;
+  color: #ccc;
+}
+
+.spinner {
+  border: 4px solid #333;
+  border-top: 4px solid #4CAF50;
+  border-radius: 50%;
+  width: 40px;
+  height: 40px;
+  animation: spin 1s linear infinite;
+  margin: 0 auto 20px;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.checkmark, .warning-icon, .error-icon {
+  font-size: 48px;
+  margin-bottom: 15px;
+  display: block;
+}
+
+.checkmark {
+  color: #4CAF50;
+  animation: scaleIn 0.3s ease-out;
+}
+
+.warning-icon {
+  color: #ff9800;
+  animation: scaleIn 0.3s ease-out;
+}
+
+.error-icon {
+  color: #f44336;
+  animation: scaleIn 0.3s ease-out;
+}
+
+@keyframes scaleIn {
+  from {
+    transform: scale(0);
+  }
+  to {
+    transform: scale(1);
+  }
+}
+
+.hash-list {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+  margin-top: 15px;
+  text-align: left;
+}
+
+.hash-item {
+  padding: 12px;
+  background-color: #1a1a1a;
+  border-radius: 6px;
+  border: 1px solid #444;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.hash-label {
+  font-size: 12px;
+  color: #888;
+  font-weight: bold;
+}
+
+.hash-value {
+  font-family: 'Courier New', monospace;
+  font-size: 14px;
+  color: #fff;
+  word-break: break-all;
+}
+
+.hash-warning {
+  color: #ff9800;
+  font-size: 12px;
+  font-weight: bold;
+}
+
+.hash-verified {
+  color: #4CAF50;
+  font-size: 12px;
+  font-weight: bold;
+}

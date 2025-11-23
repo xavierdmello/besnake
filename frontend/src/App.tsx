@@ -6,6 +6,7 @@ import { abi } from '../abi'
 import { abi as entropyAbi } from '../entropyabi'
 import { usdcAbi } from '../usdcabi'
 import { ConnectButton } from '@rainbow-me/rainbowkit'
+import confetti from 'canvas-confetti'
 
 const GRID_SIZE = 20
 const CELL_SIZE = 30
@@ -483,6 +484,7 @@ function App() {
   const { writeContract, data: hash, isPending } = useWriteContract()
   const { writeContract: writeContractApprove, data: approveHash, isPending: isApproving } = useWriteContract()
   const { writeContract: writeContractWager, data: wagerHash, isPending: isWagering } = useWriteContract()
+  const { writeContract: writeContractPayout, data: payoutTxHash, isPending: isPayingOut } = useWriteContract()
   
   const { isLoading: isConfirming, isSuccess: isConfirmed } = useWaitForTransactionReceipt({
     hash,
@@ -494,6 +496,10 @@ function App() {
 
   const { isLoading: isWagerConfirming, isSuccess: isWagered } = useWaitForTransactionReceipt({
     hash: wagerHash,
+  })
+
+  const { isLoading: isPayoutConfirming, isSuccess: isPayoutConfirmed } = useWaitForTransactionReceipt({
+    hash: payoutTxHash,
   })
 
   // Refetch after transactions are confirmed
@@ -639,6 +645,9 @@ function App() {
   const [explodingSnake1, setExplodingSnake1] = useState(false)
   const [explodingSnake2, setExplodingSnake2] = useState(false)
   const [showGameOverScreen, setShowGameOverScreen] = useState(false)
+  const [showPayoutModal, setShowPayoutModal] = useState(false)
+  const [payoutStep, setPayoutStep] = useState(0)
+  const [payoutHash, setPayoutHash] = useState<string | null>(null)
 
   // Use refs to access current state in callbacks
   const snake1Ref = useRef(snake1)
@@ -1189,10 +1198,72 @@ function App() {
     setExplodingSnake1(false)
     setExplodingSnake2(false)
     setShowGameOverScreen(false)
+    setShowPayoutModal(false)
+    setPayoutStep(0)
+    setPayoutHash(null)
     // Stop soundtrack
     if (audioRef.current) {
       audioRef.current.pause()
       audioRef.current.currentTime = 0
+    }
+  }
+
+  // Calculate consensus outcome (matches contract logic)
+  const calculateConsensus = () => {
+    if (!winner) return null
+    
+    const p1winner = winner === 1
+    const p2winner = winner === 2
+    const serverwinner = winner === 1 // Server votes for actual winner
+    
+    // Count votes for player 1
+    let votesForP1 = 0
+    if (p1winner) votesForP1++
+    if (p2winner) votesForP1++
+    if (serverwinner) votesForP1++
+    
+    const p1Wins = votesForP1 >= 2
+    const winningPlayer = p1Wins ? 1 : 2
+    
+    // Check which hashes match server (truth)
+    const p1MatchesServer = player1GameHash === serverHash
+    const p2MatchesServer = player2GameHash === serverHash
+    
+    // Check if player hashes match each other
+    const playerHashesMatch = player1GameHash === player2GameHash
+    
+    // Collect hashes from voters who voted for the winner
+    const winnerHashes: string[] = []
+    if (p1Wins) {
+      if (p1winner) winnerHashes.push(player1GameHash)
+      if (p2winner) winnerHashes.push(player2GameHash)
+      if (serverwinner) winnerHashes.push(serverHash)
+    } else {
+      if (!p1winner) winnerHashes.push(player1GameHash)
+      if (!p2winner) winnerHashes.push(player2GameHash)
+      if (!serverwinner) winnerHashes.push(serverHash)
+    }
+    
+    // Check if all winner hashes match
+    const winnerHashesMatch = winnerHashes.length > 0 && winnerHashes.every(h => h === winnerHashes[0])
+    
+    if (winnerHashesMatch) {
+      // Hashes match among voters - consensus achieved
+      return { type: 'consensus', winner: winningPlayer, reason: 'hashes_verified' }
+    } else {
+      // Hashes don't match - need server arbitration
+      if (p1MatchesServer && !p2MatchesServer) {
+        return { type: 'server_arbitration', winner: 1, reason: 'p1_matches_server' }
+      } else if (p2MatchesServer && !p1MatchesServer) {
+        return { type: 'server_arbitration', winner: 2, reason: 'p2_matches_server' }
+      } else if (!p1MatchesServer && !p2MatchesServer) {
+        // Both edited
+        return { type: 'no_consensus', winner: null, reason: 'both_edited' }
+      } else {
+        // Edge case - both match server but hashes don't match each other
+        // Server will pick the one that matches
+        return { type: 'server_arbitration', winner: p1MatchesServer ? 1 : 2, reason: p1MatchesServer ? 'p1_matches_server' : 'p2_matches_server' }
+      }
     }
   }
 
@@ -1244,6 +1315,8 @@ function App() {
   // Calculate separate game hashes for each player (consensus simulation)
   const player1GameHash = hashMoves(player1MoveLog)
   const player2GameHash = hashMoves(player2MoveLog)
+  // Server hash is the unmodified truth (from originalMoveLog)
+  const serverHash = hashMoves(originalMoveLog)
 
   const currentEditingMove = editingMove 
     ? (editingMove.player === 1 
@@ -1298,6 +1371,111 @@ function App() {
   const wagerDisplay = contractWagerAmount 
     ? (Number(contractWagerAmount) / 1e6).toFixed(2)
     : wagerAmountStr
+  
+  // Calculate prize amount (wager * 2)
+  const prizeAmount = contractWagerAmount 
+    ? (Number(contractWagerAmount) * 2 / 1e6).toFixed(2)
+    : (parseFloat(wagerAmountStr) * 2).toFixed(2)
+
+  // Convert hashes to bytes32 format
+  const hashToBytes32 = (hash: string): `0x${string}` => {
+    // Hash is hex string without 0x, pad to 64 chars (32 bytes) and add 0x
+    const padded = hash.padStart(64, '0')
+    return `0x${padded}` as `0x${string}`
+  }
+
+  // Handle claim prize
+  const handleClaimPrize = () => {
+    if (!contractAddress || !winner) return
+    
+    // Determine winner votes
+    const p1winner = winner === 1
+    const p2winner = winner === 2
+    const serverwinner = winner === 1 // Server always votes for actual winner
+    
+    // Convert hashes to bytes32
+    const p1hashBytes = hashToBytes32(player1GameHash)
+    const p2hashBytes = hashToBytes32(player2GameHash)
+    const serverhashBytes = hashToBytes32(serverHash)
+    
+    setShowPayoutModal(true)
+    setPayoutStep(0)
+    setPayoutHash(null)
+    
+    // @ts-expect-error - wagmi types are strict but this works at runtime
+    writeContractPayout({
+      address: contractAddress,
+      abi: abi as any,
+      functionName: 'chooseWinner',
+      args: [p1hashBytes, p2hashBytes, serverhashBytes, p1winner, p2winner, serverwinner],
+    })
+  }
+
+  // Trigger confetti on win
+  useEffect(() => {
+    if (gameOver && winner && showGameOverScreen) {
+      const duration = 3000
+      const animationEnd = Date.now() + duration
+      const defaults = { startVelocity: 30, spread: 360, ticks: 60, zIndex: 0 }
+
+      function randomInRange(min: number, max: number) {
+        return Math.random() * (max - min) + min
+      }
+
+      const interval = setInterval(function() {
+        const timeLeft = animationEnd - Date.now()
+
+        if (timeLeft <= 0) {
+          return clearInterval(interval)
+        }
+
+        const particleCount = 50 * (timeLeft / duration)
+        confetti({
+          ...defaults,
+          particleCount,
+          origin: { x: randomInRange(0.1, 0.9), y: Math.random() - 0.2 }
+        })
+      }, 250)
+    }
+  }, [gameOver, winner, showGameOverScreen])
+
+  // Handle payout transaction confirmation and step progression
+  useEffect(() => {
+    if (payoutTxHash) {
+      setPayoutHash(payoutTxHash)
+      // Move to step 1 after transaction is submitted
+      setTimeout(() => setPayoutStep(1), 500)
+    }
+  }, [payoutTxHash])
+
+  useEffect(() => {
+    if (payoutHash && payoutStep === 1) {
+      // Show hashes, then move to consensus check
+      setTimeout(() => setPayoutStep(2), 1500)
+    }
+  }, [payoutHash, payoutStep])
+
+  useEffect(() => {
+    if (payoutStep === 2) {
+      const consensus = calculateConsensus()
+      if (consensus?.type === 'server_arbitration') {
+        // Show server arbitration step, then move to waiting
+        setTimeout(() => setPayoutStep(3), 2000)
+      } else {
+        // Move to waiting for confirmation
+        setTimeout(() => setPayoutStep(3), 2000)
+      }
+    }
+  }, [payoutStep])
+
+  useEffect(() => {
+    if (isPayoutConfirmed && showPayoutModal) {
+      // Wait a bit then show final step
+      setTimeout(() => {
+        setPayoutStep(4)
+      }, 500)
+    }
+  }, [isPayoutConfirmed, showPayoutModal])
 
   // Show wager screen if both players are not ready
   if (!bothPlayersReady && contractAddress) {
@@ -1637,7 +1815,7 @@ function App() {
                 )
               })}
             </div>
-            {gameOver && showGameOverScreen && (
+            {gameOver && showGameOverScreen && !showPayoutModal && (
               <div className="game-over-overlay-board">
                 <div className="game-over-content">
                   {winner === null ? (
@@ -1645,7 +1823,11 @@ function App() {
                   ) : (
                     <h2>Player {winner} Wins!</h2>
                   )}
-                  <button onClick={resetGame}>Play Again</button>
+                  {winner && (
+                    <button onClick={handleClaimPrize} disabled={isPayingOut || isPayoutConfirming}>
+                      {isPayingOut || isPayoutConfirming ? 'Processing...' : `Claim Prize: ${prizeAmount} USDC`}
+                    </button>
+                  )}
                 </div>
               </div>
             )}
@@ -1688,6 +1870,172 @@ function App() {
           </div>
         </div>
       </div>
+
+      {/* Payout Modal */}
+      {showPayoutModal && gameOver && winner && (
+        <div className="payout-modal-overlay">
+          <div className="payout-modal">
+            <h2 style={{ marginBottom: '30px', color: '#4CAF50' }}>Consensus Verification</h2>
+            
+            {(() => {
+              const consensus = calculateConsensus()
+              const steps = []
+              
+              // Step 0: Submitting transaction
+              if (payoutStep === 0) {
+                steps.push(
+                  <div key="step0" className="payout-step">
+                    <div className="spinner"></div>
+                    <p>Submitting transaction to blockchain...</p>
+                    {payoutHash && (
+                      <p style={{ fontSize: '12px', color: '#888', marginTop: '10px' }}>
+                        Hash: {payoutHash.slice(0, 10)}...
+                      </p>
+                    )}
+                  </div>
+                )
+              }
+              
+              // Step 1: Show hashes
+              if (payoutStep >= 1) {
+                steps.push(
+                  <div key="step1" className="payout-step">
+                    <h3>Game State Hashes</h3>
+                    <div className="hash-list">
+                      <div className="hash-item">
+                        <span className="hash-label">Player 1 Hash:</span>
+                        <span className="hash-value">{player1GameHash}</span>
+                        {player1GameHash !== serverHash && (
+                          <span className="hash-warning">⚠ Modified</span>
+                        )}
+                      </div>
+                      <div className="hash-item">
+                        <span className="hash-label">Player 2 Hash:</span>
+                        <span className="hash-value">{player2GameHash}</span>
+                        {player2GameHash !== serverHash && (
+                          <span className="hash-warning">⚠ Modified</span>
+                        )}
+                      </div>
+                      <div className="hash-item">
+                        <span className="hash-label">Server Hash (Truth):</span>
+                        <span className="hash-value">{serverHash}</span>
+                        <span className="hash-verified">✓ Unmodified</span>
+                      </div>
+                    </div>
+                  </div>
+                )
+              }
+              
+              // Step 2: Check consensus
+              if (payoutStep >= 2 && consensus) {
+                if (consensus.type === 'consensus' && consensus.reason === 'hashes_verified') {
+                  steps.push(
+                    <div key="step2" className="payout-step success">
+                      <div className="checkmark">✓</div>
+                      <h3>Hashes Verified</h3>
+                      <p>Player 1 and Player 2 hashes match and align with server.</p>
+                      <p style={{ marginTop: '15px', fontSize: '18px', fontWeight: 'bold', color: '#4CAF50' }}>
+                        Paying out {prizeAmount} USDC to Player {consensus.winner}
+                      </p>
+                    </div>
+                  )
+                } else if (consensus.type === 'server_arbitration') {
+                  steps.push(
+                    <div key="step2" className="payout-step warning">
+                      <div className="warning-icon">⚠</div>
+                      <h3>Hash Mismatch</h3>
+                      <p>Player hashes don't match. Consulting server...</p>
+                    </div>
+                  )
+                  
+                  if (payoutStep >= 3) {
+                    steps.push(
+                      <div key="step3" className="payout-step success">
+                        <div className="checkmark">✓</div>
+                        <h3>Server Arbitration</h3>
+                        <p>
+                          Server matches with Player {consensus.reason === 'p1_matches_server' ? '1' : '2'} (unmodified hash)
+                        </p>
+                        <p style={{ marginTop: '15px', fontSize: '18px', fontWeight: 'bold', color: '#4CAF50' }}>
+                          Paying out {prizeAmount} USDC to Player {consensus.winner}
+                        </p>
+                      </div>
+                    )
+                  }
+                } else if (consensus.type === 'no_consensus') {
+                  steps.push(
+                    <div key="step2" className="payout-step error">
+                      <div className="error-icon">✗</div>
+                      <h3>No Consensus</h3>
+                      <p>Both players have modified their hashes. No consensus possible.</p>
+                      <p style={{ marginTop: '15px', fontSize: '18px', fontWeight: 'bold', color: '#ff9800' }}>
+                        Returning wager amounts to both players
+                      </p>
+                    </div>
+                  )
+                }
+              }
+              
+              // Step 3: Waiting for confirmation (after consensus result shown)
+              if (payoutStep === 3 && !isPayoutConfirmed) {
+                const consensus = calculateConsensus()
+                // Only show waiting if we've already shown the consensus result
+                if (consensus && (consensus.type === 'consensus' || consensus.type === 'no_consensus' || consensus.type === 'server_arbitration')) {
+                  // If server arbitration, we already showed it, now show waiting
+                  if (consensus.type === 'server_arbitration') {
+                    // Server arbitration was shown, now waiting
+                    steps.push(
+                      <div key="step3-wait" className="payout-step">
+                        <div className="spinner"></div>
+                        <p>Waiting for transaction confirmation...</p>
+                      </div>
+                    )
+                  } else {
+                    // Consensus or no consensus - show waiting
+                    steps.push(
+                      <div key="step3-wait" className="payout-step">
+                        <div className="spinner"></div>
+                        <p>Waiting for transaction confirmation...</p>
+                      </div>
+                    )
+                  }
+                }
+              }
+              
+              // Step 4: Transaction confirmed
+              if (payoutStep >= 4 && isPayoutConfirmed) {
+                steps.push(
+                  <div key="step4" className="payout-step success">
+                    <div className="checkmark">✓</div>
+                    <h3>Transaction Confirmed</h3>
+                    <p>Payout has been processed on-chain.</p>
+                    <button 
+                      onClick={() => {
+                        resetGame()
+                      }}
+                      style={{
+                        marginTop: '20px',
+                        padding: '12px 30px',
+                        fontSize: '1.1rem',
+                        backgroundColor: '#4CAF50',
+                        color: '#fff',
+                        border: 'none',
+                        borderRadius: '8px',
+                        cursor: 'pointer',
+                        fontWeight: 'bold'
+                      }}
+                    >
+                      Play Another Game
+                    </button>
+                  </div>
+                )
+              }
+              
+              return <div className="payout-steps">{steps}</div>
+            })()}
+          </div>
+        </div>
+      )}
     </div>
   )
 }
