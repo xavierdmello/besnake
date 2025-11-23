@@ -648,6 +648,9 @@ function App() {
   const [showPayoutModal, setShowPayoutModal] = useState(false)
   const [payoutStep, setPayoutStep] = useState(0)
   const [payoutHash, setPayoutHash] = useState<string | null>(null)
+  const [oldPlayer1Balance, setOldPlayer1Balance] = useState<string>('0.00')
+  const [oldPlayer2Balance, setOldPlayer2Balance] = useState<string>('0.00')
+  const [showBalanceAnimation, setShowBalanceAnimation] = useState(false)
 
   // Use refs to access current state in callbacks
   const snake1Ref = useRef(snake1)
@@ -910,9 +913,9 @@ function App() {
       newSnake2.pop()
     }
 
-    // Check win condition: first to length 10 wins
-    if (newSnake1.length >= 10 && newSnake2.length >= 10) {
-      // Both reached 10 at the same time - player 1 wins (first check)
+    // Check win condition: first to length 5 wins
+    if (newSnake1.length >= 5 && newSnake2.length >= 5) {
+      // Both reached 5 at the same time - player 1 wins (first check)
       return {
         snake1: newSnake1,
         snake2: newSnake2,
@@ -923,7 +926,7 @@ function App() {
         gameOver: true,
         winner: 1
       }
-    } else if (newSnake1.length >= 10) {
+    } else if (newSnake1.length >= 5) {
       // Player 1 wins
       return {
         snake1: newSnake1,
@@ -935,7 +938,7 @@ function App() {
         gameOver: true,
         winner: 1
       }
-    } else if (newSnake2.length >= 10) {
+    } else if (newSnake2.length >= 5) {
       // Player 2 wins
       return {
         snake1: newSnake1,
@@ -1388,6 +1391,10 @@ function App() {
   const handleClaimPrize = () => {
     if (!contractAddress || !winner) return
     
+    // Store old balances before payout
+    setOldPlayer1Balance(player1BalanceDisplay)
+    setOldPlayer2Balance(player2BalanceDisplay)
+    
     // Determine winner votes
     const p1winner = winner === 1
     const p2winner = winner === 2
@@ -1401,6 +1408,7 @@ function App() {
     setShowPayoutModal(true)
     setPayoutStep(0)
     setPayoutHash(null)
+    setShowBalanceAnimation(false)
     
     // @ts-expect-error - wagmi types are strict but this works at runtime
     writeContractPayout({
@@ -1477,8 +1485,8 @@ function App() {
     }
   }, [isPayoutConfirmed, showPayoutModal])
 
-  // Show wager screen if both players are not ready
-  if (!bothPlayersReady && contractAddress) {
+  // Show wager screen if both players are not ready (but not if payout modal is open)
+  if (!bothPlayersReady && contractAddress && !showPayoutModal) {
     return (
       <div className="game-container">
         <header className="app-header">
@@ -1623,7 +1631,7 @@ function App() {
           gap: '8px'
         }}>
           <div style={{ fontFamily: 'monospace', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <span>pyth seed:</span>
+            <span>{(chainId === 84532 || chainId === 8453) ? 'pyth seed:' : 'flare seed:'}</span>
             <textarea
               ref={seedTextareaRef}
               value={displaySeed}
@@ -1731,7 +1739,7 @@ function App() {
 
         {/* Center: Game Board */}
         <div className="game-center">
-          <div className="game-board-title">First to 10 Wins</div>
+          <div className="game-board-title">First to 5 Wins</div>
           <div className={`game-board-wrapper ${showGameOverScreen || (!gameOver && isSeedInvalid) ? 'game-over-blur' : ''}`}>
             <div className="game-board">
               {Array.from({ length: GRID_SIZE * GRID_SIZE }).map((_, index) => {
@@ -1900,7 +1908,7 @@ function App() {
               if (payoutStep >= 1) {
                 steps.push(
                   <div key="step1" className="payout-step">
-                    <h3>Game State Hashes</h3>
+                    <h3>Game State Hashes ({(chainId === 84532 || chainId === 8453) ? 'Pyth' : 'Flare'} Seed + Player Input Log)</h3>
                     <div className="hash-list">
                       <div className="hash-item">
                         <span className="hash-label">Player 1 Hash:</span>
