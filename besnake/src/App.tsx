@@ -308,8 +308,6 @@ type GameState = {
   direction1: Position
   direction2: Position
   food: Position
-  score1: number
-  score2: number
   gameOver: boolean
   winner: 1 | 2 | null
 }
@@ -322,14 +320,16 @@ function App() {
   const [food, setFood] = useState<Position>({ x: 10, y: 10 })
   const [gameOver, setGameOver] = useState(false)
   const [winner, setWinner] = useState<1 | 2 | null>(null)
-  const [score1, setScore1] = useState(0)
-  const [score2, setScore2] = useState(0)
+  // Scores are derived from snake lengths - no separate state needed
   const [tick, setTick] = useState(0)
   const [moveLog, setMoveLog] = useState<MoveLog[]>([])
   const [originalMoveLog, setOriginalMoveLog] = useState<MoveLog[]>([])
   const [modifiedMoves, setModifiedMoves] = useState<Set<string>>(new Set())
   const [editingMove, setEditingMove] = useState<{ tick: number, player: 1 | 2 } | null>(null)
   const [gameStarted, setGameStarted] = useState(false)
+  const [explodingSnake1, setExplodingSnake1] = useState(false)
+  const [explodingSnake2, setExplodingSnake2] = useState(false)
+  const [showGameOverScreen, setShowGameOverScreen] = useState(false)
 
   // Use refs to access current state in callbacks
   const snake1Ref = useRef(snake1)
@@ -459,36 +459,34 @@ function App() {
     }
 
     // Both alive - move snakes
+    // Always create new arrays to avoid reference sharing
     let newSnake1 = dir1.x === 0 && dir1.y === 0 
-      ? state.snake1 
+      ? [...state.snake1] 
       : [newHead1, ...state.snake1]
     let newSnake2 = dir2.x === 0 && dir2.y === 0
-      ? state.snake2
+      ? [...state.snake2]
       : [newHead2, ...state.snake2]
     
-    let foodEaten = false
-    let newScore1 = state.score1
-    let newScore2 = state.score2
+    let p1AteFood = false
+    let p2AteFood = false
     let newFood = state.food
 
     // Check food for player 1 (only if moving)
     if (dir1.x !== 0 || dir1.y !== 0) {
       if (newHead1.x === state.food.x && newHead1.y === state.food.y) {
-        newScore1 = state.score1 + 1
-        foodEaten = true
+        p1AteFood = true
       }
     }
 
     // Check food for player 2 (only if moving, and player 1 didn't eat it)
-    if (!foodEaten && (dir2.x !== 0 || dir2.y !== 0)) {
+    if (!p1AteFood && (dir2.x !== 0 || dir2.y !== 0)) {
       if (newHead2.x === state.food.x && newHead2.y === state.food.y) {
-        newScore2 = state.score2 + 1
-        foodEaten = true
+        p2AteFood = true
       }
     }
 
-    // Generate new food if eaten
-    if (foodEaten) {
+    // Generate new food if eaten by either player
+    if (p1AteFood || p2AteFood) {
       // Generate food that doesn't overlap with snakes
       let newFoodPos: Position
       do {
@@ -501,14 +499,17 @@ function App() {
         newSnake2.some(seg => seg.x === newFoodPos.x && seg.y === newFoodPos.y)
       )
       newFood = newFoodPos
-    } else {
-      // No food eaten - remove tails only if snake moved
-      if (dir1.x !== 0 || dir1.y !== 0) {
-        newSnake1.pop()
-      }
-      if (dir2.x !== 0 || dir2.y !== 0) {
-        newSnake2.pop()
-      }
+    }
+
+    // Each snake's tail removal is completely independent
+    // Snake 1: remove tail if it moved AND didn't eat food
+    if ((dir1.x !== 0 || dir1.y !== 0) && !p1AteFood) {
+      newSnake1.pop()
+    }
+    
+    // Snake 2: remove tail if it moved AND didn't eat food
+    if ((dir2.x !== 0 || dir2.y !== 0) && !p2AteFood) {
+      newSnake2.pop()
     }
 
     return {
@@ -517,8 +518,6 @@ function App() {
       direction1: dir1,
       direction2: dir2,
       food: newFood,
-      score1: newScore1,
-      score2: newScore2,
       gameOver: state.gameOver,
       winner: state.winner
     }
@@ -552,36 +551,41 @@ function App() {
         return prevOriginal
       })
       // Apply the move immediately for live gameplay
+      // Create new arrays to avoid reference sharing
       const currentState: GameState = {
-        snake1: snake1Ref.current,
-        snake2: snake2Ref.current,
+        snake1: [...snake1Ref.current],
+        snake2: [...snake2Ref.current],
         direction1: dir1,
         direction2: dir2,
-        food: foodRef.current,
-        score1: 0, // We'll update scores separately
-        score2: 0,
+        food: { ...foodRef.current },
         gameOver: false,
         winner: null
       }
       const newState = applyMove(currentState, p1Move, p2Move, currentTick)
       
-      // Update state
+      // Update state - scores are derived from snake lengths
       setSnake1(newState.snake1)
       setSnake2(newState.snake2)
       setDirection1(newState.direction1)
       setDirection2(newState.direction2)
       setFood(newState.food)
-      setScore1(prevScore => {
-        if (newState.score1 > prevScore) return newState.score1
-        return prevScore
-      })
-      setScore2(prevScore => {
-        if (newState.score2 > prevScore) return newState.score2
-        return prevScore
-      })
       if (newState.gameOver) {
         setGameOver(true)
         setWinner(newState.winner)
+        // Trigger explosion animation for losing snake(s)
+        if (newState.winner === 1) {
+          setExplodingSnake2(true) // Player 2 loses
+        } else if (newState.winner === 2) {
+          setExplodingSnake1(true) // Player 1 loses
+        } else {
+          // Both died (tie) - explode both
+          setExplodingSnake1(true)
+          setExplodingSnake2(true)
+        }
+        // Show game over screen after explosion animation (2 seconds)
+        setTimeout(() => {
+          setShowGameOverScreen(true)
+        }, 2000)
       }
       
       return newLog
@@ -679,14 +683,15 @@ function App() {
     setFood({ x: 10, y: 10 })
     setGameOver(false)
     setWinner(null)
-    setScore1(0)
-    setScore2(0)
     setTick(0)
     setMoveLog([])
     setOriginalMoveLog([])
     setModifiedMoves(new Set())
     setEditingMove(null)
     setGameStarted(false)
+    setExplodingSnake1(false)
+    setExplodingSnake2(false)
+    setShowGameOverScreen(false)
   }
 
   const handleMoveClick = useCallback((tick: number, player: 1 | 2) => {
@@ -735,8 +740,8 @@ function App() {
 
   const currentEditingMove = editingMove 
     ? (editingMove.player === 1 
-        ? moveLog.find(([t]) => t === editingMove.tick)?.[1] 
-        : moveLog.find(([t]) => t === editingMove.tick)?.[2])
+        ? (moveLog.find(([t]) => t === editingMove.tick)?.[1] ?? null)
+        : (moveLog.find(([t]) => t === editingMove.tick)?.[2] ?? null))
     : null
 
   return (
@@ -754,7 +759,7 @@ function App() {
         <div className="move-panel">
           <div className="game-board-header">
             <div className="board-header-left">Player 1</div>
-            <div className="board-header-right">Length: {score1}</div>
+            <div className="board-header-right">Length: {snake1.length}</div>
           </div>
           <div className="game-hash-container">
             <div className="game-hash-label">Game Hash = {gameHash}</div>
@@ -785,6 +790,8 @@ function App() {
                 const isTail1 = head1Index === snake1.length - 1 && snake1.length > 1
                 const isTail2 = head2Index === snake2.length - 1 && snake2.length > 1
                 const isFood = food.x === x && food.y === y
+                const isExploding1 = explodingSnake1 && isSnake1
+                const isExploding2 = explodingSnake2 && isSnake2
                 
                 // Get direction for head/tail styling
                 // For head: use movement direction (curve the front)
@@ -818,18 +825,29 @@ function App() {
                   return undefined
                 }
 
+                // Generate random particle directions for explosion
+                const particleAngle1 = isExploding1 || isExploding2 ? Math.random() * Math.PI * 2 : 0
+                const particleAngle2 = isExploding1 || isExploding2 ? Math.random() * Math.PI * 2 : 0
+                const particleDistance = 30 + Math.random() * 20
+                
                 return (
                 <div
                   key={index}
-                  className={`cell ${isHead1 ? 'head1' : ''} ${isHead2 ? 'head2' : ''} ${isSnake1 ? 'snake1' : ''} ${isSnake2 ? 'snake2' : ''} ${isTail1 ? 'tail1' : ''} ${isTail2 ? 'tail2' : ''} ${isFood ? 'food' : ''}`}
+                  className={`cell ${isHead1 ? 'head1' : ''} ${isHead2 ? 'head2' : ''} ${isSnake1 ? 'snake1' : ''} ${isSnake2 ? 'snake2' : ''} ${isTail1 ? 'tail1' : ''} ${isTail2 ? 'tail2' : ''} ${isFood ? 'food' : ''} ${isExploding1 ? 'exploding' : ''} ${isExploding2 ? 'exploding' : ''}`}
                   style={{
                     width: CELL_SIZE,
                     height: CELL_SIZE,
                     ...(isHead1 && head1Dir ? { borderRadius: getHeadBorderRadius(head1Dir) } : {}),
                     ...(isHead2 && head2Dir ? { borderRadius: getHeadBorderRadius(head2Dir) } : {}),
                     ...(isTail1 && tail1Dir ? { borderRadius: getTailBorderRadius(tail1Dir) } : {}),
-                    ...(isTail2 && tail2Dir ? { borderRadius: getTailBorderRadius(tail2Dir) } : {})
-                  }}
+                    ...(isTail2 && tail2Dir ? { borderRadius: getTailBorderRadius(tail2Dir) } : {}),
+                    ...(isExploding1 || isExploding2 ? {
+                      '--particle-x-1': `${Math.cos(particleAngle1) * particleDistance}px`,
+                      '--particle-y-1': `${Math.sin(particleAngle1) * particleDistance}px`,
+                      '--particle-x-2': `${Math.cos(particleAngle2) * particleDistance}px`,
+                      '--particle-y-2': `${Math.sin(particleAngle2) * particleDistance}px`
+                    } : {})
+                  } as React.CSSProperties}
                 >
                   {isHead1 && (
                     <GooglyEyes direction={direction1} player={1} />
@@ -841,7 +859,7 @@ function App() {
                 )
               })}
             </div>
-            {gameOver && (
+            {gameOver && showGameOverScreen && (
               <div className="game-over-overlay-board">
                 <div className="game-over-content">
                   {winner === null ? (
@@ -865,7 +883,7 @@ function App() {
         <div className="move-panel">
           <div className="game-board-header">
             <div className="board-header-left">Player 2</div>
-            <div className="board-header-right">Length: {score2}</div>
+            <div className="board-header-right">Length: {snake2.length}</div>
           </div>
           <div className="game-hash-container">
             <div className="game-hash-label">Game Hash = {gameHash}</div>

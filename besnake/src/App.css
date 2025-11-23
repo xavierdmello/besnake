@@ -469,6 +469,81 @@
   z-index: 1;
 }
 
+.cell.exploding {
+  animation: explode 2s ease-out forwards;
+  position: relative;
+  overflow: visible;
+}
+
+.cell.exploding::before,
+.cell.exploding::after {
+  content: '';
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  background: inherit;
+  border-radius: inherit;
+  animation: explodeParticle 2s ease-out forwards;
+}
+
+.cell.exploding::before {
+  animation-delay: 0.1s;
+  transform-origin: center;
+}
+
+.cell.exploding::after {
+  animation-delay: 0.2s;
+  transform-origin: center;
+}
+
+@keyframes explode {
+  0% {
+    transform: scale(1);
+    opacity: 1;
+    filter: brightness(1);
+  }
+  20% {
+    transform: scale(1.2);
+    opacity: 1;
+    filter: brightness(2) blur(1px);
+  }
+  50% {
+    transform: scale(0.8) rotate(180deg);
+    opacity: 0.8;
+    filter: brightness(3) blur(2px);
+  }
+  100% {
+    transform: scale(0) rotate(360deg);
+    opacity: 0;
+    filter: brightness(0) blur(3px);
+  }
+}
+
+@keyframes explodeParticle {
+  0% {
+    transform: translate(0, 0) scale(1) rotate(0deg);
+    opacity: 1;
+  }
+  50% {
+    transform: translate(var(--particle-x-1, 20px), var(--particle-y-1, -20px)) scale(0.6) rotate(180deg);
+    opacity: 0.7;
+  }
+  100% {
+    transform: translate(var(--particle-x-1, 40px), var(--particle-y-1, -40px)) scale(0) rotate(360deg);
+    opacity: 0;
+  }
+}
+
+.cell.exploding.snake1::before,
+.cell.exploding.snake1::after {
+  background-color: #3b82f6;
+}
+
+.cell.exploding.snake2::before,
+.cell.exploding.snake2::after {
+  background-color: #ec4899;
+}
+
 .game-board-wrapper {
   position: relative;
   transition: filter 0.3s;
