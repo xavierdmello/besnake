@@ -4,4 +4,4 @@ I used Pyth’s Entropy SDK to generate trustless, verifiable randomness for app
 
 Contract: https://github.com/xavierdmello/slithermoney/blob/main/contracts/contracts/Snake.sol
 
-Deployed Link: https://base-sepolia.blockscout.com/address/0x573D34311044b51246D022c326b12Cd2DffC82a1?tab=read_write_contract
+Deployed Link: https://base-sepolia.blockscout.com/address/0x82393d3dd11c31c252e120aa566bc59ac98cbd6b
