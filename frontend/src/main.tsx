@@ -23,7 +23,7 @@ import {
 const config = getDefaultConfig({
   appName: 'BeSnake',
   projectId: '156876c1e89434446647b715f4d95dc6',
-  chains: [base,baseSepolia,flare,flareTestnet],
+  chains: [baseSepolia,flareTestnet],
   ssr: true, // If your dApp uses server side rendering (SSR)
 });
 const queryClient = new QueryClient();
