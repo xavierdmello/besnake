@@ -82,6 +82,91 @@ const seededRandom = (seed: bigint, index: number): number => {
   return Math.abs(hash) / 0x7fffffff
 }
 
+// Balance Animation Component
+type BalanceAnimationProps = {
+  player: 1 | 2
+  oldBalance: string
+  newBalance: string
+  isAnimating: boolean
+}
+
+function BalanceAnimation({ player, oldBalance, newBalance, isAnimating }: BalanceAnimationProps) {
+  const [displayBalance, setDisplayBalance] = useState(oldBalance)
+  const [isComplete, setIsComplete] = useState(false)
+  const [hasStarted, setHasStarted] = useState(false)
+
+  useEffect(() => {
+    if (isAnimating && !hasStarted) {
+      setHasStarted(true)
+      setIsComplete(false)
+      setDisplayBalance(oldBalance)
+      
+      // Small delay before starting animation
+      const startDelay = setTimeout(() => {
+        const oldVal = parseFloat(oldBalance)
+        const newVal = parseFloat(newBalance)
+        const diff = newVal - oldVal
+        const duration = 2500 // 2.5 seconds
+        const steps = 120
+        const stepTime = duration / steps
+        let currentStep = 0
+
+        const interval = setInterval(() => {
+          currentStep++
+          const progress = currentStep / steps
+          // Ease out cubic for smooth animation
+          const eased = 1 - Math.pow(1 - progress, 3)
+          const currentVal = oldVal + (diff * eased)
+          setDisplayBalance(currentVal.toFixed(2))
+
+          if (currentStep >= steps) {
+            setDisplayBalance(newBalance)
+            setIsComplete(true)
+            clearInterval(interval)
+          }
+        }, stepTime)
+
+        return () => clearInterval(interval)
+      }, 300)
+
+      return () => clearTimeout(startDelay)
+    }
+  }, [isAnimating, oldBalance, newBalance, hasStarted])
+
+  const diff = parseFloat(newBalance) - parseFloat(oldBalance)
+  const isIncrease = diff > 0
+
+  return (
+    <div className={`balance-animation-container ${player === 1 ? 'player1' : 'player2'}`}>
+      <div className="balance-animation-label">Player {player} Balance</div>
+      <div className={`balance-animation-numbers ${isAnimating && hasStarted ? 'animating' : ''} ${isComplete ? 'complete' : ''}`}>
+        <div className="balance-old">
+          <span className="balance-amount">{oldBalance}</span>
+          <span className="balance-currency">USDC</span>
+        </div>
+        {isAnimating && hasStarted && (
+          <>
+            <div className="balance-arrow">→</div>
+            <div className={`balance-new ${isIncrease ? 'increase' : 'decrease'}`}>
+              <span className="balance-amount">{displayBalance}</span>
+              <span className="balance-currency">USDC</span>
+              {isComplete && isIncrease && diff > 0 && (
+                <span className="balance-bonus">+{diff.toFixed(2)}</span>
+              )}
+            </div>
+          </>
+        )}
+        {!isAnimating && (
+          <div className={`balance-final ${isIncrease ? 'increase' : 'decrease'}`}>
+            <span className="balance-amount">{newBalance}</span>
+            <span className="balance-currency">USDC</span>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 type GooglyEyesProps = {
   direction: Position
   player: 1 | 2
@@ -1380,6 +1465,34 @@ function App() {
     ? (Number(contractWagerAmount) * 2 / 1e6).toFixed(2)
     : (parseFloat(wagerAmountStr) * 2).toFixed(2)
 
+  // Calculate new balances based on consensus outcome
+  const calculateNewBalances = () => {
+    const consensus = calculateConsensus()
+    if (!consensus) return { p1: oldPlayer1Balance, p2: oldPlayer2Balance }
+    
+    const oldP1 = parseFloat(oldPlayer1Balance)
+    const oldP2 = parseFloat(oldPlayer2Balance)
+    const prize = parseFloat(prizeAmount)
+    const wager = parseFloat(wagerDisplay)
+    
+    if (consensus.type === 'consensus' || consensus.type === 'server_arbitration') {
+      // Winner gets the full pot
+      if (consensus.winner === 1) {
+        return { p1: (oldP1 + prize).toFixed(2), p2: oldPlayer2Balance }
+      } else {
+        return { p1: oldPlayer1Balance, p2: (oldP2 + prize).toFixed(2) }
+      }
+    } else if (consensus.type === 'no_consensus') {
+      // Both get their wager back
+      return { 
+        p1: (oldP1 + wager).toFixed(2), 
+        p2: (oldP2 + wager).toFixed(2) 
+      }
+    }
+    
+    return { p1: oldPlayer1Balance, p2: oldPlayer2Balance }
+  }
+
   // Convert hashes to bytes32 format
   const hashToBytes32 = (hash: string): `0x${string}` => {
     // Hash is hex string without 0x, pad to 64 chars (32 bytes) and add 0x
@@ -1880,12 +1993,36 @@ function App() {
       </div>
 
       {/* Payout Modal */}
-      {showPayoutModal && gameOver && winner && (
-        <div className="payout-modal-overlay">
-          <div className="payout-modal">
-            <h2 style={{ marginBottom: '30px', color: '#4CAF50' }}>Consensus Verification</h2>
+      {showPayoutModal && gameOver && winner && (() => {
+        const newBalances = calculateNewBalances()
+        const finalP1Balance = player1BalanceDisplay || newBalances.p1
+        const finalP2Balance = player2BalanceDisplay || newBalances.p2
+        const shouldAnimate = payoutStep >= 4 && isPayoutConfirmed
+        
+        return (
+          <div className="payout-modal-overlay">
+            {/* Floating Balance Animations - Outside modal box */}
+            <div className="floating-balance-left">
+              <BalanceAnimation
+                player={1}
+                oldBalance={oldPlayer1Balance}
+                newBalance={finalP1Balance}
+                isAnimating={shouldAnimate}
+              />
+            </div>
+            <div className="floating-balance-right">
+              <BalanceAnimation
+                player={2}
+                oldBalance={oldPlayer2Balance}
+                newBalance={finalP2Balance}
+                isAnimating={shouldAnimate}
+              />
+            </div>
             
-            {(() => {
+            <div className="payout-modal">
+              <h2 style={{ marginBottom: '30px', color: '#4CAF50' }}>Consensus Verification</h2>
+              
+              {(() => {
               const consensus = calculateConsensus()
               const steps = []
               
@@ -2017,12 +2154,16 @@ function App() {
                     <div className="checkmark">✓</div>
                     <h3>Transaction Confirmed</h3>
                     <p>Payout has been processed on-chain.</p>
+                    <p style={{ marginTop: '15px', fontSize: '14px', color: '#888' }}>
+                      Check the balance changes on the sides!
+                    </p>
+                    
                     <button 
                       onClick={() => {
                         resetGame()
                       }}
                       style={{
-                        marginTop: '20px',
+                        marginTop: '30px',
                         padding: '12px 30px',
                         fontSize: '1.1rem',
                         backgroundColor: '#4CAF50',
@@ -2043,7 +2184,8 @@ function App() {
             })()}
           </div>
         </div>
-      )}
+        )
+      })()}
     </div>
   )
 }

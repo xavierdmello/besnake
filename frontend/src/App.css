@@ -710,6 +710,33 @@
   backdrop-filter: blur(5px);
 }
 
+/* Floating Balance Animations - Outside modal box */
+.floating-balance-left,
+.floating-balance-right {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 1001;
+  animation: floatBalance 3s ease-in-out infinite;
+}
+
+.floating-balance-left {
+  left: 20px;
+}
+
+.floating-balance-right {
+  right: 20px;
+}
+
+@keyframes floatBalance {
+  0%, 100% {
+    transform: translateY(-50%) translateY(0);
+  }
+  50% {
+    transform: translateY(-50%) translateY(-20px);
+  }
+}
+
 .payout-modal {
   background-color: #1a1a1a;
   border: 2px solid #4CAF50;
@@ -859,4 +886,249 @@
   color: #4CAF50;
   font-size: 12px;
   font-weight: bold;
+}
+
+/* Balance Animation */
+.balance-animations-container {
+  display: flex;
+  flex-direction: column;
+  gap: 25px;
+  margin: 20px 0;
+}
+
+.balance-animation-container {
+  padding: 30px;
+  background: linear-gradient(135deg, rgba(76, 175, 80, 0.2) 0%, rgba(76, 175, 80, 0.1) 100%);
+  border: 3px solid #4CAF50;
+  border-radius: 20px;
+  position: relative;
+  overflow: visible;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.5), 0 0 40px rgba(76, 175, 80, 0.3);
+  backdrop-filter: blur(10px);
+  min-width: 280px;
+  animation: containerGlow 2s ease-in-out infinite;
+}
+
+.balance-animation-container.player1 {
+  border-color: #60a5fa;
+  background: linear-gradient(135deg, rgba(96, 165, 250, 0.2) 0%, rgba(96, 165, 250, 0.1) 100%);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.5), 0 0 40px rgba(96, 165, 250, 0.4);
+  animation: containerGlow 2s ease-in-out infinite, player1Pulse 3s ease-in-out infinite;
+}
+
+.balance-animation-container.player2 {
+  border-color: #f472b6;
+  background: linear-gradient(135deg, rgba(244, 114, 182, 0.2) 0%, rgba(244, 114, 182, 0.1) 100%);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.5), 0 0 40px rgba(244, 114, 182, 0.4);
+  animation: containerGlow 2s ease-in-out infinite, player2Pulse 3s ease-in-out infinite;
+}
+
+@keyframes containerGlow {
+  0%, 100% {
+    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.5), 0 0 40px rgba(76, 175, 80, 0.3);
+  }
+  50% {
+    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.5), 0 0 60px rgba(76, 175, 80, 0.6);
+  }
+}
+
+@keyframes player1Pulse {
+  0%, 100% {
+    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.5), 0 0 40px rgba(96, 165, 250, 0.4);
+  }
+  50% {
+    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.5), 0 0 60px rgba(96, 165, 250, 0.7);
+  }
+}
+
+@keyframes player2Pulse {
+  0%, 100% {
+    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.5), 0 0 40px rgba(244, 114, 182, 0.4);
+  }
+  50% {
+    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.5), 0 0 60px rgba(244, 114, 182, 0.7);
+  }
+}
+
+.balance-animation-label {
+  font-size: 14px;
+  color: #888;
+  margin-bottom: 15px;
+  font-weight: bold;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.balance-animation-numbers {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 20px;
+  min-height: 80px;
+}
+
+.balance-old,
+.balance-new,
+.balance-final {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+}
+
+.balance-amount {
+  font-size: 64px;
+  font-weight: bold;
+  font-family: 'Courier New', monospace;
+  color: #fff;
+  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
+  transition: all 0.3s ease;
+  line-height: 1.2;
+}
+
+.balance-new .balance-amount {
+  animation: numberPulse 0.4s ease-in-out infinite;
+  color: #4CAF50;
+  text-shadow: 0 0 30px rgba(76, 175, 80, 1), 0 0 50px rgba(76, 175, 80, 0.8), 0 2px 10px rgba(0, 0, 0, 0.5);
+  font-size: 72px;
+}
+
+.balance-new.increase .balance-amount {
+  color: #4CAF50;
+  animation: numberPulse 0.5s ease-in-out infinite, numberGrow 2s ease-out;
+}
+
+.balance-new.decrease .balance-amount {
+  color: #ff9800;
+}
+
+.balance-final.increase .balance-amount {
+  color: #4CAF50;
+  animation: numberFinalPulse 1s ease-out;
+}
+
+.balance-currency {
+  font-size: 18px;
+  color: #888;
+  font-weight: normal;
+}
+
+.balance-arrow {
+  font-size: 36px;
+  color: #4CAF50;
+  animation: arrowBounce 1s ease-in-out infinite;
+  font-weight: bold;
+}
+
+.balance-bonus {
+  position: absolute;
+  top: -30px;
+  right: -30px;
+  background: linear-gradient(135deg, #4CAF50 0%, #22c55e 100%);
+  color: #fff;
+  padding: 12px 20px;
+  border-radius: 25px;
+  font-size: 24px;
+  font-weight: bold;
+  animation: bonusPop 0.6s ease-out, bonusFloat 2s ease-in-out infinite;
+  box-shadow: 0 6px 20px rgba(76, 175, 80, 0.8), 0 0 30px rgba(76, 175, 80, 0.4);
+  z-index: 10;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+}
+
+@keyframes numberPulse {
+  0%, 100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.1);
+  }
+}
+
+@keyframes numberGrow {
+  0% {
+    transform: scale(0.8);
+    opacity: 0.5;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+@keyframes numberFinalPulse {
+  0% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.15);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+@keyframes arrowBounce {
+  0%, 100% {
+    transform: translateX(0);
+  }
+  50% {
+    transform: translateX(10px);
+  }
+}
+
+@keyframes bonusPop {
+  0% {
+    transform: scale(0) rotate(0deg);
+    opacity: 0;
+  }
+  50% {
+    transform: scale(1.2) rotate(180deg);
+  }
+  100% {
+    transform: scale(1) rotate(360deg);
+    opacity: 1;
+  }
+}
+
+@keyframes bonusFloat {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-10px);
+  }
+}
+
+.balance-animation-numbers.animating .balance-old {
+  animation: fadeOut 1s ease-out forwards;
+}
+
+.balance-animation-numbers.complete .balance-new {
+  animation: celebration 0.5s ease-out;
+}
+
+@keyframes fadeOut {
+  to {
+    opacity: 0.3;
+    transform: scale(0.9);
+  }
+}
+
+@keyframes celebration {
+  0% {
+    transform: scale(1) rotate(0deg);
+  }
+  25% {
+    transform: scale(1.2) rotate(-5deg);
+  }
+  50% {
+    transform: scale(1.2) rotate(5deg);
+  }
+  75% {
+    transform: scale(1.1) rotate(-3deg);
+  }
+  100% {
+    transform: scale(1) rotate(0deg);
+  }
 }
