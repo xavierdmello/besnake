@@ -630,7 +630,8 @@ function App() {
   const [winner, setWinner] = useState<1 | 2 | null>(null)
   // Scores are derived from snake lengths - no separate state needed
   const [tick, setTick] = useState(0)
-  const [moveLog, setMoveLog] = useState<MoveLog[]>([])
+  const [player1MoveLog, setPlayer1MoveLog] = useState<MoveLog[]>([])
+  const [player2MoveLog, setPlayer2MoveLog] = useState<MoveLog[]>([])
   const [originalMoveLog, setOriginalMoveLog] = useState<MoveLog[]>([])
   const [modifiedMoves, setModifiedMoves] = useState<Set<string>>(new Set())
   const [editingMove, setEditingMove] = useState<{ tick: number, player: 1 | 2 } | null>(null)
@@ -1015,16 +1016,18 @@ function App() {
       })
     }
     
-    setMoveLog(prev => {
-      const newLog = [...prev, [currentTick, p1Move, p2Move] as MoveLog]
-      // Also update original move log if this is a new move (not a replay)
-      setOriginalMoveLog(prevOriginal => {
-        // Only add if this tick doesn't exist in original (i.e., it's a new move, not a replay)
-        if (!prevOriginal.find(([t]) => t === currentTick)) {
-          return [...prevOriginal, [currentTick, p1Move, p2Move] as MoveLog]
-        }
-        return prevOriginal
-      })
+    const newMove: MoveLog = [currentTick, p1Move, p2Move]
+    // Update both player move logs with the same move (consensus - both see the same moves)
+    setPlayer1MoveLog(prev => [...prev, newMove])
+    setPlayer2MoveLog(prev => [...prev, newMove])
+    // Also update original move log if this is a new move (not a replay)
+    setOriginalMoveLog(prevOriginal => {
+      // Only add if this tick doesn't exist in original (i.e., it's a new move, not a replay)
+      if (!prevOriginal.find(([t]) => t === currentTick)) {
+        return [...prevOriginal, newMove]
+      }
+      return prevOriginal
+    })
       
       // Update state - scores are derived from snake lengths
       setSnake1(newState.snake1)
@@ -1058,9 +1061,7 @@ function App() {
           setShowGameOverScreen(true)
         }, 2000)
       }
-      
-      return newLog
-    })
+    
     setTick(prev => prev + 1)
   }, [applyMove, foodCounter])
 
@@ -1179,7 +1180,8 @@ function App() {
     setGameOver(false)
     setWinner(null)
     setTick(0)
-    setMoveLog([])
+    setPlayer1MoveLog([])
+    setPlayer2MoveLog([])
     setOriginalMoveLog([])
     setModifiedMoves(new Set())
     setEditingMove(null)
@@ -1202,46 +1204,51 @@ function App() {
     if (!editingMove) return
 
     const { tick, player } = editingMove
-    setMoveLog(prev => {
-      // Find original move from originalMoveLog
-      const originalMove = originalMoveLog.find(([t]) => t === tick)
-      const originalPlayerMove = originalMove 
-        ? (player === 1 ? originalMove[1] : originalMove[2])
-        : null
-      
-      // Check if move is actually different from original
-      const moveKey = `${tick}-${player}`
-      setModifiedMoves(prevModified => {
-        const newSet = new Set(prevModified)
-        if (move !== originalPlayerMove) {
-          newSet.add(moveKey)
-        } else {
-          newSet.delete(moveKey)
-        }
-        return newSet
-      })
+    // Find original move from originalMoveLog
+    const originalMove = originalMoveLog.find(([t]) => t === tick)
+    const originalPlayerMove = originalMove 
+      ? (player === 1 ? originalMove[1] : originalMove[2])
+      : null
+    
+    // Check if move is actually different from original
+    const moveKey = `${tick}-${player}`
+    setModifiedMoves(prevModified => {
+      const newSet = new Set(prevModified)
+      if (move !== originalPlayerMove) {
+        newSet.add(moveKey)
+      } else {
+        newSet.delete(moveKey)
+      }
+      return newSet
+    })
 
-      const newLog = prev.map(([t, p1, p2]) => {
+    // Only update the move log for the player who is editing (consensus simulation)
+    if (player === 1) {
+      setPlayer1MoveLog(prev => prev.map(([t, p1, p2]) => {
         if (t === tick) {
-          const newP1 = player === 1 ? move : p1
-          const newP2 = player === 2 ? move : p2
-          return [t, newP1, newP2] as MoveLog
+          return [t, move, p2] as MoveLog
         }
         return [t, p1, p2] as MoveLog
-      })
-      
-      // Just update the move log, don't replay the game
-      return newLog
-    })
+      }))
+    } else {
+      setPlayer2MoveLog(prev => prev.map(([t, p1, p2]) => {
+        if (t === tick) {
+          return [t, p1, move] as MoveLog
+        }
+        return [t, p1, p2] as MoveLog
+      }))
+    }
     setEditingMove(null)
   }, [editingMove, originalMoveLog])
 
-  const gameHash = hashMoves(moveLog)
+  // Calculate separate game hashes for each player (consensus simulation)
+  const player1GameHash = hashMoves(player1MoveLog)
+  const player2GameHash = hashMoves(player2MoveLog)
 
   const currentEditingMove = editingMove 
     ? (editingMove.player === 1 
-        ? (moveLog.find(([t]) => t === editingMove.tick)?.[1] ?? null)
-        : (moveLog.find(([t]) => t === editingMove.tick)?.[2] ?? null))
+        ? (player1MoveLog.find(([t]) => t === editingMove.tick)?.[1] ?? null)
+        : (player2MoveLog.find(([t]) => t === editingMove.tick)?.[2] ?? null))
     : null
 
   // Wager screen handlers
@@ -1532,9 +1539,9 @@ function App() {
             <div className="board-header-right">Length: {snake1.length}</div>
           </div>
           <div className="game-hash-container">
-            <div className="game-hash-label">Game Hash = {gameHash}</div>
+            <div className="game-hash-label">Game Hash = {player1GameHash}</div>
             <MoveVisualization 
-              moves={moveLog} 
+              moves={player1MoveLog} 
               player={1} 
               gameOver={gameOver}
               modifiedMoves={modifiedMoves}
@@ -1669,9 +1676,9 @@ function App() {
             <div className="board-header-right">Length: {snake2.length}</div>
           </div>
           <div className="game-hash-container">
-            <div className="game-hash-label">Game Hash = {gameHash}</div>
+            <div className="game-hash-label">Game Hash = {player2GameHash}</div>
             <MoveVisualization 
-              moves={moveLog} 
+              moves={player2MoveLog} 
               player={2} 
               gameOver={gameOver}
               modifiedMoves={modifiedMoves}
