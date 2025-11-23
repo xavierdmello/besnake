@@ -11,10 +11,6 @@ const GAME_SPEED = 150
 
 type Position = { x: number; y: number }
 type MoveLog = [number, string | null, string | null] // [tick, player1input, player2input]
-import { ConnectButton } from '@rainbow-me/rainbowkit';
-
-
-  
 
 // Convert direction to letter
 const directionToLetter = (dir: Position): string | null => {
@@ -655,12 +651,12 @@ function App() {
     }
     
     setMoveLog(prev => {
-      const newLog = [...prev, [currentTick, p1Move, p2Move] as MoveLog]
+      const newLog = [...prev, [currentTick, p1Move, p2Move]]
       // Also update original move log if this is a new move (not a replay)
       setOriginalMoveLog(prevOriginal => {
         // Only add if this tick doesn't exist in original (i.e., it's a new move, not a replay)
         if (!prevOriginal.find(([t]) => t === currentTick)) {
-          return [...prevOriginal, [currentTick, p1Move, p2Move] as MoveLog]
+          return [...prevOriginal, [currentTick, p1Move, p2Move]]
         }
         return prevOriginal
       })
@@ -839,9 +835,9 @@ function App() {
         if (t === tick) {
           const newP1 = player === 1 ? move : p1
           const newP2 = player === 2 ? move : p2
-          return [t, newP1, newP2] as MoveLog
+          return [t, newP1, newP2]
         }
-        return [t, p1, p2] as MoveLog
+        return [t, p1, p2]
       })
       
       // Just update the move log, don't replay the game
@@ -860,14 +856,6 @@ function App() {
 
   return (
     <div className="game-container">
-      <header className="app-header">
-        <div className="app-header-logo">
-          SnakeWithMoney
-        </div>
-        <div>
-          <ConnectButton />
-        </div>
-      </header>
       {editingMove && (
         <MoveSelector
           currentMove={currentEditingMove}

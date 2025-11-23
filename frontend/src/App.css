@@ -2,14 +2,30 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
   min-height: 100vh;
-  padding: 20px;
+  padding: 0 0 20px 0;
   background-color: #1a1a1a;
   color: #fff;
   margin: 0 auto;
   width: 100%;
   box-sizing: border-box;
+}
+
+.app-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+  padding: 20px;
+  margin-bottom: 60px;
+  box-sizing: border-box;
+}
+
+.app-header-logo {
+  font-size: 1.5rem;
+  font-weight: bold;
+  color: #fff;
 }
 
 .move-panel-header {
@@ -42,6 +58,8 @@
   justify-content: center;
   width: 100%;
   max-width: 1600px;
+  padding: 0 20px;
+  box-sizing: border-box;
 }
 
 .game-center {
