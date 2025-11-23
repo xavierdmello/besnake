@@ -1,5 +1,10 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import './App.css'
+import { useReadContract, useWriteContract, useChainId, useWaitForTransactionReceipt, useBlockNumber } from 'wagmi'
+import { config as contractConfig } from '../config'
+import { abi } from '../abi'
+import { abi as entropyAbi } from '../entropyabi'
+import { ConnectButton } from '@rainbow-me/rainbowkit'
 
 const GRID_SIZE = 20
 const CELL_SIZE = 30
@@ -11,7 +16,6 @@ const GAME_SPEED = 150
 
 type Position = { x: number; y: number }
 type MoveLog = [number, string | null, string | null] // [tick, player1input, player2input]
-import { ConnectButton } from '@rainbow-me/rainbowkit';
 
 
   
@@ -317,6 +321,76 @@ type GameState = {
 }
 
 function App() {
+  const chainId = useChainId()
+  const rawAddress = contractConfig[chainId as keyof typeof contractConfig]?.address
+  const contractAddress = rawAddress && rawAddress !== '0x0000000000000000000000000000000000000000' 
+    ? (rawAddress as `0x${string}`)
+    : undefined
+  
+  // Read entropy address from Snake contract
+  const { data: entropyAddress } = useReadContract({
+    address: contractAddress,
+    abi: abi,
+    functionName: 'entropy',
+    query: {
+      enabled: !!contractAddress,
+    },
+  })
+
+  // Read feeV2 from entropy contract
+  const { data: feeV2 } = useReadContract({
+    address: entropyAddress as `0x${string}` | undefined,
+    abi: entropyAbi,
+    functionName: 'getFeeV2',
+    query: {
+      enabled: !!entropyAddress,
+    },
+  })
+
+  // Read random seed from contract
+  const { data: randomSeed, refetch: refetchRandomSeed } = useReadContract({
+    address: contractAddress,
+    abi: abi,
+    functionName: 'numberAsUint',
+    query: {
+      enabled: !!contractAddress,
+    },
+  })
+
+  // Watch for new blocks
+  const { data: blockNumber } = useBlockNumber({ watch: true })
+
+  // Write contract to generate new random number
+  const { writeContract, data: hash, isPending } = useWriteContract()
+  
+  const { isLoading: isConfirming, isSuccess: isConfirmed } = useWaitForTransactionReceipt({
+    hash,
+  })
+
+  // Refetch random seed on every new block
+  useEffect(() => {
+    if (blockNumber && contractAddress) {
+      refetchRandomSeed()
+    }
+  }, [blockNumber, contractAddress, refetchRandomSeed])
+
+  // Refetch random seed after transaction is confirmed
+  useEffect(() => {
+    if (isConfirmed) {
+      refetchRandomSeed()
+    }
+  }, [isConfirmed, refetchRandomSeed])
+
+  const handleGenerateRandom = () => {
+    if (!contractAddress || feeV2 === undefined) return
+    writeContract({
+      address: contractAddress,
+      abi: abi,
+      functionName: 'requestRandomNumber',
+      value: BigInt(feeV2.toString()),
+    } as any)
+  }
+
   const [snake1, setSnake1] = useState<Position[]>(INITIAL_SNAKE_1)
   const [snake2, setSnake2] = useState<Position[]>(INITIAL_SNAKE_2)
   const [direction1, setDirection1] = useState<Position>(INITIAL_DIRECTION_1)
@@ -994,6 +1068,19 @@ function App() {
                 </div>
               </div>
             )}
+          </div>
+
+          <div className="random-seed-section">
+            <div className="random-seed-header">
+              <h3>Random Seed: {randomSeed !== undefined ? randomSeed.toString() : 'Loading...'}</h3>
+              <button 
+                onClick={handleGenerateRandom}
+                disabled={!contractAddress || feeV2 === undefined || isPending || isConfirming}
+                className="generate-random-btn"
+              >
+                {isPending || isConfirming ? 'Generating...' : 'Generate New Random Number'}
+              </button>
+            </div>
           </div>
 
           <div className="instructions">
